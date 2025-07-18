@@ -67,6 +67,13 @@ sudo nano /etc/eda-filewatch/myfile.conf
 | `API_METHOD` | No | `POST` | HTTP method for API calls |
 | `API_TIMEOUT` | No | `30` | Timeout for API calls in seconds |
 | `API_TOKEN` | No | - | Bearer token for API authentication |
+| `RETRY_COUNT` | No | `3` | Number of retry attempts for failed API calls |
+| `RETRY_DELAY` | No | `5` | Delay between retry attempts in seconds |
+| `RATE_LIMIT` | No | `10` | Maximum API calls per minute |
+| `SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
+| `SSL_CACERT` | No | - | Path to custom CA certificate file |
+| `SSL_CERT` | No | - | Path to client certificate file (mutual TLS) |
+| `SSL_KEY` | No | - | Path to client private key file (mutual TLS) |
 | `LOG_LEVEL` | No | `INFO` | Log level (DEBUG, INFO, WARN, ERROR) |
 
 ### Example Configuration
@@ -157,6 +164,59 @@ sudo systemctl start eda-filewatch@config-file
 sudo systemctl start eda-filewatch@data-file
 ```
 
+## SSL/Certificate Handling
+
+The service provides comprehensive SSL certificate handling for secure API communications:
+
+### Certificate Validation Options
+
+1. **Default (Secure)**: Full SSL certificate verification
+   ```bash
+   SSL_VERIFY="true"  # Default behavior
+   ```
+
+2. **Self-Signed Certificates**: Disable verification (use with caution)
+   ```bash
+   SSL_VERIFY="false"
+   ```
+
+3. **Custom CA Certificate**: Use internal/corporate CA
+   ```bash
+   SSL_CACERT="/etc/ssl/certs/company-ca.pem"
+   ```
+
+4. **Mutual TLS**: Client certificate authentication
+   ```bash
+   SSL_CERT="/etc/ssl/certs/client.pem"
+   SSL_KEY="/etc/ssl/private/client.key"
+   ```
+
+### Common Certificate Scenarios
+
+| Scenario | Configuration | Example |
+|----------|---------------|---------|
+| **Public API** | Default settings | `SSL_VERIFY="true"` |
+| **Internal API (Self-signed)** | Disable verification | `SSL_VERIFY="false"` |
+| **Corporate Network** | Custom CA | `SSL_CACERT="/etc/ssl/certs/corporate.pem"` |
+| **High Security** | Mutual TLS | `SSL_CERT` + `SSL_KEY` |
+
+### Error Handling
+
+The service now properly handles SSL certificate errors:
+
+- **Certificate validation failures**: Logged with specific error messages
+- **Custom CA loading errors**: Validated during startup
+- **Client certificate issues**: Detected and reported
+- **Retry logic**: Distinguishes SSL errors from network failures
+
+### Security Best Practices
+
+- ✅ **Keep SSL_VERIFY="true"** for production environments
+- ✅ **Use custom CA certificates** instead of disabling verification
+- ✅ **Secure certificate files** with proper permissions (600)
+- ✅ **Rotate certificates** regularly
+- ⚠️ **Only use SSL_VERIFY="false"** for testing/development
+
 ## API Authentication
 
 The service supports Bearer token authentication for secure API calls:
@@ -200,6 +260,23 @@ The systemd service includes several security features:
 - **No new privileges**: Prevents privilege escalation
 - **Resource limits**: CPU and memory limits to prevent resource exhaustion
 - **Private temporary directory**: Isolated temporary files
+
+## Enhanced Security & Reliability
+
+The monitoring script includes several security and reliability improvements:
+
+### Security Enhancements
+- **Safe config loading**: Validates config file syntax before execution
+- **JSON payload escaping**: Prevents injection attacks through file paths
+- **Input validation**: Comprehensive validation of all configuration parameters
+- **Permission checking**: Warns about overly permissive config file permissions
+
+### Reliability Improvements
+- **Retry logic**: Configurable retry attempts with exponential backoff
+- **Rate limiting**: Prevents API endpoint overload (configurable calls/minute)
+- **Enhanced error handling**: Distinguishes between client/server errors
+- **Improved monitoring**: Uses FIFOs instead of subshells for better signal handling
+- **Connection timeouts**: Prevents hanging on network issues
 
 ## Troubleshooting
 

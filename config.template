@@ -23,6 +23,21 @@ LOG_LEVEL="INFO"
 # If set, will be sent as "Authorization: Bearer <token>" header
 # API_TOKEN="your-api-token-here"
 
+# Optional: Number of retry attempts for failed API calls (default: 3)
+# RETRY_COUNT=3
+
+# Optional: Delay between retry attempts in seconds (default: 5)
+# RETRY_DELAY=5
+
+# Optional: Rate limit for API calls per minute (default: 10)
+# RATE_LIMIT=10
+
+# Optional: SSL/Certificate options
+# SSL_VERIFY="true"                    # Enable/disable SSL certificate verification (default: true)
+# SSL_CACERT="/path/to/ca-cert.pem"    # Custom CA certificate file
+# SSL_CERT="/path/to/client-cert.pem"  # Client certificate file (for mutual TLS)
+# SSL_KEY="/path/to/client-key.pem"    # Client private key file (for mutual TLS)
+
 # Optional: Additional curl options (advanced users only)
 # CURL_EXTRA_ARGS="--header 'X-Custom-Header: value'"
 
@@ -40,4 +55,19 @@ LOG_LEVEL="INFO"
 # API_METHOD="POST"
 # API_TIMEOUT=60
 # API_TOKEN="your-ansible-automation-platform-token"
-# LOG_LEVEL="DEBUG" 
+# LOG_LEVEL="DEBUG"
+# 
+# For internal APIs with self-signed certificates:
+# WATCH_FILE="/etc/internal/config.json"
+# API_URL="https://internal-api.company.com/webhook"
+# API_METHOD="POST"
+# SSL_VERIFY="false"
+# LOG_LEVEL="INFO"
+# 
+# For APIs with custom CA certificates:
+# WATCH_FILE="/etc/secure/data.json"
+# API_URL="https://secure-api.company.com/webhook"
+# API_METHOD="POST"
+# SSL_CACERT="/etc/ssl/certs/company-ca.pem"
+# API_TOKEN="secure-token"
+# LOG_LEVEL="INFO" 
