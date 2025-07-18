@@ -10,6 +10,7 @@ WATCH_FILE="${WATCH_FILE:-}"
 API_URL="${API_URL:-}"
 API_METHOD="${API_METHOD:-POST}"
 API_TIMEOUT="${API_TIMEOUT:-30}"
+API_TOKEN="${API_TOKEN:-}"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
 CONFIG_FILE="${CONFIG_FILE:-/etc/eda-filewatch/config}"
 
@@ -105,13 +106,29 @@ EOF
     local response
     local http_code
     
-    response=$(curl -s -w "\n%{http_code}" \
-        -X "$API_METHOD" \
-        -H "Content-Type: application/json" \
-        -H "User-Agent: EDA-FileWatch-Monitor/1.0" \
-        -d "$payload" \
-        --max-time "$API_TIMEOUT" \
-        "$API_URL" 2>&1)
+    # Build curl command with conditional auth header
+    local curl_args=(
+        -s
+        -w "\n%{http_code}"
+        -X "$API_METHOD"
+        -H "Content-Type: application/json"
+        -H "User-Agent: EDA-FileWatch-Monitor/1.0"
+    )
+    
+    # Add Authorization header if API_TOKEN is set
+    if [[ -n "$API_TOKEN" ]]; then
+        curl_args+=(-H "Authorization: Bearer $API_TOKEN")
+        log "DEBUG" "Using API token for authentication"
+    fi
+    
+    # Add remaining arguments
+    curl_args+=(
+        -d "$payload"
+        --max-time "$API_TIMEOUT"
+        "$API_URL"
+    )
+    
+    response=$(curl "${curl_args[@]}" 2>&1)
     
     http_code=$(echo "$response" | tail -n1)
     response_body=$(echo "$response" | head -n -1)
@@ -143,6 +160,11 @@ main() {
     log "INFO" "API URL: $API_URL"
     log "INFO" "API Method: $API_METHOD"
     log "INFO" "API Timeout: ${API_TIMEOUT}s"
+    if [[ -n "$API_TOKEN" ]]; then
+        log "INFO" "API Authentication: Enabled (Bearer token)"
+    else
+        log "INFO" "API Authentication: Disabled"
+    fi
     
     # Start monitoring
     log "INFO" "Starting file monitor..."

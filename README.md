@@ -1,5 +1,9 @@
 # EDA File Watch Monitor with systemd
 
+![AI Assisted Yes](https://img.shields.io/badge/AI%20Assisted-Yes-green?style=for-the-badge)
+
+⚠️ **This tool is under active development, features may not work entirely or as expected. Use at your own risk!!** ⚠️
+
 A robust systemd service that monitors files for changes and triggers API calls when modifications are detected. Perfect for Event-Driven Architecture (EDA) scenarios where file changes need to trigger downstream processes.
 
 ## Features
@@ -62,6 +66,7 @@ sudo nano /etc/eda-filewatch/myfile.conf
 | `API_URL` | Yes | - | Complete URL to call when file changes |
 | `API_METHOD` | No | `POST` | HTTP method for API calls |
 | `API_TIMEOUT` | No | `30` | Timeout for API calls in seconds |
+| `API_TOKEN` | No | - | Bearer token for API authentication |
 | `LOG_LEVEL` | No | `INFO` | Log level (DEBUG, INFO, WARN, ERROR) |
 
 ### Example Configuration
@@ -79,6 +84,26 @@ API_TIMEOUT=60
 
 # Enable debug logging
 LOG_LEVEL="DEBUG"
+```
+
+### Example with Ansible Automation Platform
+
+```bash
+# Monitor Ansible inventory file
+WATCH_FILE="/etc/ansible/inventory/hosts"
+
+# Call Ansible Automation Platform webhook
+API_URL="https://ansible.example.com/api/v2/job_templates/123/launch/"
+
+# Use authentication token
+API_TOKEN="your-ansible-automation-platform-token"
+
+# Use POST method (default for AAP)
+API_METHOD="POST"
+API_TIMEOUT=60
+
+# Enable info logging
+LOG_LEVEL="INFO"
 ```
 
 ## Usage
@@ -131,6 +156,27 @@ sudo systemctl enable eda-filewatch@data-file
 sudo systemctl start eda-filewatch@config-file
 sudo systemctl start eda-filewatch@data-file
 ```
+
+## API Authentication
+
+The service supports Bearer token authentication for secure API calls:
+
+### Setting Up Authentication
+
+1. **For Ansible Automation Platform:**
+   - Generate a personal access token in AAP
+   - Add it to your configuration: `API_TOKEN="your-aap-token"`
+
+2. **For other APIs:**
+   - Obtain your API token from your service provider
+   - Configure it in your instance configuration file
+
+### Security Considerations
+
+- Store tokens securely in configuration files with restricted permissions
+- Use environment variables for sensitive tokens in production
+- Rotate tokens regularly according to your security policy
+- Never commit tokens to version control
 
 ## API Payload
 

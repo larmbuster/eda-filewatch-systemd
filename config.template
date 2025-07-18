@@ -19,8 +19,12 @@ API_TIMEOUT=30
 # Optional: Log level (DEBUG, INFO, WARN, ERROR) (default: INFO)
 LOG_LEVEL="INFO"
 
+# Optional: Authentication token for API calls (e.g., for Ansible Automation Platform)
+# If set, will be sent as "Authorization: Bearer <token>" header
+# API_TOKEN="your-api-token-here"
+
 # Optional: Additional curl options (advanced users only)
-# CURL_EXTRA_ARGS="--header 'Authorization: Bearer your-token'"
+# CURL_EXTRA_ARGS="--header 'X-Custom-Header: value'"
 
 # Example configurations:
 # 
@@ -30,9 +34,10 @@ LOG_LEVEL="INFO"
 # API_METHOD="PUT"
 # LOG_LEVEL="INFO"
 # 
-# For monitoring a data file:
+# For monitoring a data file with authentication:
 # WATCH_FILE="/var/data/myapp/important-data.txt"
 # API_URL="https://api.myapp.com/hooks/data-updated"
 # API_METHOD="POST"
 # API_TIMEOUT=60
+# API_TOKEN="your-ansible-automation-platform-token"
 # LOG_LEVEL="DEBUG" 
