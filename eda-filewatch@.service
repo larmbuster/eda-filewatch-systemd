@@ -1,0 +1,38 @@
+[Unit]
+Description=EDA File Watch Monitor for %i
+Documentation=https://github.com/user/eda-filewatch-systemd
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=eda-filewatch
+Group=eda-filewatch
+WorkingDirectory=/opt/eda-filewatch
+ExecStart=/opt/eda-filewatch/filewatch-monitor.sh
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+
+# Environment configuration
+Environment=CONFIG_FILE=/etc/eda-filewatch/%i.conf
+Environment=LOG_LEVEL=INFO
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/log/eda-filewatch
+ReadOnlyPaths=/etc/eda-filewatch
+
+# Resource limits
+LimitNOFILE=1024
+LimitNPROC=32
+
+[Install]
+WantedBy=multi-user.target 

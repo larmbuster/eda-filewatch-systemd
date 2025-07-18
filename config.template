@@ -1,0 +1,38 @@
+# EDA File Watch Monitor Configuration
+# Copy this file to /etc/eda-filewatch/myfile.conf
+# and customize the values below
+
+# Required: File to watch for changes
+# This should be an absolute path to the file you want to monitor
+WATCH_FILE="/path/to/your/file.txt"
+
+# Required: API URL to call when file changes
+# This should be a complete URL including protocol (http/https)
+API_URL="https://your-api-endpoint.com/webhook"
+
+# Optional: HTTP method to use for API calls (default: POST)
+API_METHOD="POST"
+
+# Optional: Timeout for API calls in seconds (default: 30)
+API_TIMEOUT=30
+
+# Optional: Log level (DEBUG, INFO, WARN, ERROR) (default: INFO)
+LOG_LEVEL="INFO"
+
+# Optional: Additional curl options (advanced users only)
+# CURL_EXTRA_ARGS="--header 'Authorization: Bearer your-token'"
+
+# Example configurations:
+# 
+# For monitoring a configuration file:
+# WATCH_FILE="/etc/myapp/config.json"
+# API_URL="https://api.myapp.com/hooks/config-changed"
+# API_METHOD="PUT"
+# LOG_LEVEL="INFO"
+# 
+# For monitoring a data file:
+# WATCH_FILE="/var/data/myapp/important-data.txt"
+# API_URL="https://api.myapp.com/hooks/data-updated"
+# API_METHOD="POST"
+# API_TIMEOUT=60
+# LOG_LEVEL="DEBUG" 
