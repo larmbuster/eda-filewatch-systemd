@@ -77,24 +77,10 @@ check_requirements() {
     print_status "All requirements satisfied"
 }
 
-# Create service user and group
+# Create service user and group - SKIPPED as service runs as root
 create_service_user() {
-    print_status "Creating service user and group..."
-    
-    if ! getent group "$SERVICE_GROUP" >/dev/null 2>&1; then
-        groupadd --system "$SERVICE_GROUP"
-        print_status "Created group: $SERVICE_GROUP"
-    else
-        print_warning "Group $SERVICE_GROUP already exists"
-    fi
-    
-    if ! getent passwd "$SERVICE_USER" >/dev/null 2>&1; then
-        useradd --system --gid "$SERVICE_GROUP" --home-dir "$INSTALL_DIR" \
-                --shell /bin/false --comment "EDA File Watch Monitor" "$SERVICE_USER"
-        print_status "Created user: $SERVICE_USER"
-    else
-        print_warning "User $SERVICE_USER already exists"
-    fi
+    print_status "Service will run as root for system-wide file access"
+    print_warning "No separate service user will be created"
 }
 
 # Create directories
@@ -112,7 +98,7 @@ create_directories() {
     chown root:root "$CONFIG_DIR"
     chmod 755 "$CONFIG_DIR"
     
-    chown "$SERVICE_USER:$SERVICE_GROUP" "$LOG_DIR"
+    chown root:root "$LOG_DIR"
     chmod 755 "$LOG_DIR"
     
     print_status "Directories created successfully"
@@ -205,6 +191,8 @@ EOF
 # Show usage information
 show_usage() {
     print_status "Installation completed successfully!"
+    echo
+    print_warning "Note: The service runs as root to allow monitoring any file on the system"
     echo
     echo "Usage:"
     echo "  1. Create a configuration file for your instance:"

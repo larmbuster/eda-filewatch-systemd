@@ -6,8 +6,9 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=eda-filewatch
-Group=eda-filewatch
+# Run as root to access all files
+User=root
+Group=root
 WorkingDirectory=/opt/eda-filewatch
 ExecStart=/opt/eda-filewatch/filewatch-monitor.sh
 ExecReload=/bin/kill -HUP $MAINPID
@@ -21,14 +22,15 @@ RestartSec=5
 Environment=CONFIG_FILE=/etc/eda-filewatch/%i.conf
 Environment=LOG_LEVEL=INFO
 
-# Security settings
-NoNewPrivileges=true
+# Security settings - relaxed for root access to all files
+NoNewPrivileges=false
 PrivateTmp=false
-PrivateDevices=true
+PrivateDevices=false
 ProtectHome=false
-ProtectSystem=strict
-ReadWritePaths=/var/log/eda-filewatch /tmp
-ReadOnlyPaths=/etc/eda-filewatch /home /var /opt /usr
+ProtectSystem=false
+# Remove path restrictions to allow access to all files
+#ReadWritePaths=/var/log/eda-filewatch /tmp
+#ReadOnlyPaths=/etc/eda-filewatch /home /var /opt /usr
 
 # Resource limits
 LimitNOFILE=1024
