@@ -350,7 +350,25 @@ This is useful for:
 
 ## Uninstallation
 
-To remove the service:
+### Automated Uninstallation
+
+Use the provided uninstall script for safe removal:
+
+```bash
+sudo ./uninstall.sh
+```
+
+The uninstall script will:
+- Stop and disable all running service instances
+- Remove the systemd service file
+- Remove the installation directory
+- Optionally remove configuration files (with confirmation)
+- Optionally remove log files (with confirmation)
+- Reload systemd
+
+### Manual Uninstallation
+
+If you prefer to uninstall manually:
 
 ```bash
 # Stop all instances
