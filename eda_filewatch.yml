@@ -1,0 +1,10 @@
+---
+- name: Enforce foo.txt
+  hosts: all
+  become: true
+  tasks:
+    - name: Ensure foo.txt contains only "foo"
+      ansible.builtin.lineinfile:
+        path: /home/larmbuster/foo.txt
+        regexp: '^FOO='
+        line: FOO=foo
