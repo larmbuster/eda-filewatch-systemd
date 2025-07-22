@@ -4,22 +4,22 @@
 
 ⚠️ **This tool is under active development, features may not work entirely or as expected. Use at your own risk!!** ⚠️
 
-A robust systemd service that monitors files for changes and triggers Ansible Automation Platform (AAP) job template launches when modifications are detected. Perfect for Event-Driven Ansible scenarios where file changes need to trigger automation workflows.
+A robust systemd service that monitors files for changes and triggers Ansible Automation Platform (AAP) job template launches when modifications are detected. Specifically designed for seamless integration with AAP's Event-Driven Ansible capabilities, enabling automated responses to file system changes with enhanced error handling and reliability.
 
 ## Features
 
 - **Real-time file monitoring** using Linux inotify
-- **Direct AAP integration** with job template launching
+- **Enhanced AAP integration** with improved job template launching and error handling
 - **Multiple instance support** - monitor multiple files simultaneously
-- **Robust error handling** with automatic retries
+- **Advanced error handling** with automatic retries and better error classification
 - **Comprehensive logging** with configurable log levels
-- **Security-focused** with proper systemd security settings
-- **Easy installation** with automated setup script
+- **Root execution** for unrestricted file access across the system
+- **Easy installation** with streamlined setup script
 
 ## Prerequisites
 
 - Linux system with systemd
-- Root/sudo access for installation
+- Root/sudo access for installation and service operation
 - Required packages: `inotify-tools`, `curl`
 
 ### Installing Dependencies
@@ -228,6 +228,10 @@ The service requires AAP authentication for launching job templates:
 
 ## AAP Integration
 
+The service provides enhanced integration with Ansible Automation Platform, ensuring reliable job template execution with improved error handling.
+
+### Job Template Launching
+
 When a file change is detected, the service launches an AAP job template with the following extra variables:
 
 ```json
@@ -251,7 +255,7 @@ These variables are available in your Ansible playbooks as:
 
 The systemd service includes several security features:
 
-- **Dedicated user/group**: Runs as `eda-filewatch` user with minimal privileges
+- **Root privileges**: Service now runs as root to ensure access to all monitored files
 - **Filesystem restrictions**: Limited access to only necessary directories
 - **No new privileges**: Prevents privilege escalation
 - **Resource limits**: CPU and memory limits to prevent resource exhaustion
@@ -297,8 +301,8 @@ The monitoring script includes several security and reliability improvements:
    - Verify AAP URL format matches: `/api/controller/v2/job_templates/ID/launch/`
 
 4. **Permission issues:**
-   - Ensure the `eda-filewatch` user can read the watched file
-   - Check directory permissions along the path
+   - Service runs as root to ensure file access
+   - Verify the watched file path is correct and accessible
 
 ### Log Levels
 
@@ -317,8 +321,8 @@ export WATCH_FILE="/path/to/your/file.txt"
 export API_URL="https://your-api-endpoint.com/webhook"
 export LOG_LEVEL="DEBUG"
 
-# Run the script
-sudo -u eda-filewatch /opt/eda-filewatch/filewatch-monitor.sh
+# Run the script as root
+sudo /opt/eda-filewatch/filewatch-monitor.sh
 ```
 
 ## Uninstallation
@@ -338,9 +342,7 @@ sudo rm -rf /opt/eda-filewatch
 sudo rm -rf /etc/eda-filewatch
 sudo rm -rf /var/log/eda-filewatch
 
-# Remove user and group
-sudo userdel eda-filewatch
-sudo groupdel eda-filewatch
+# Note: Service runs as root, no dedicated user/group to remove
 
 # Reload systemd
 sudo systemctl daemon-reload
