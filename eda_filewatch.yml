@@ -5,6 +5,6 @@
   tasks:
     - name: Ensure foo.txt contains only "foo"
       ansible.builtin.lineinfile:
-        path: /home/larmbuster/foo.txt
+        path: /home/larmbuster/git-repos/eda-filewatch-systemd/foo.txt
         regexp: '^FOO='
         line: FOO=foo
