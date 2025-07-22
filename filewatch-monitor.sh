@@ -62,7 +62,7 @@ declare -a api_call_times=()
 
 # Debouncing variables
 last_event_time=0
-DEBOUNCE_DELAY="${DEBOUNCE_DELAY:-2}"  # Wait 2 seconds after last event before triggering
+DEBOUNCE_DELAY="${DEBOUNCE_DELAY:-5}"  # Wait 5 seconds after last event before triggering
 
 # Logging function
 log() {
@@ -417,7 +417,13 @@ main() {
         
         # Start inotifywait in monitor mode in background
         # Monitor the directory to catch file recreations
-        inotifywait -m -e modify,move,create,delete,close_write "$watch_dir" \
+        # Events monitored:
+        #   close_write: File closed after writing (save complete)
+        #   moved_to: File moved into directory (atomic saves)
+        #   delete: File deleted
+        #   attrib: File permissions/metadata changed
+        #   create: File created (catches some editor patterns)
+        inotifywait -m -e close_write,moved_to,delete,attrib,create "$watch_dir" \
             --format '%w%f %e %T' --timefmt '%Y-%m-%d %H:%M:%S' \
             2>/dev/null > "$temp_fifo" &
         
@@ -427,6 +433,7 @@ main() {
         # Variables for debouncing
         local pending_file=""
         local pending_time=""
+        local pending_event=""
         local debounce_timer_pid=""
         
         while true; do
@@ -451,11 +458,12 @@ main() {
                     # Store the latest event details
                     pending_file="$file"
                     pending_time="$time"
+                    pending_event="$event"
                     
                     # Start a new debounce timer in background
                     (
                         sleep "$DEBOUNCE_DELAY"
-                        log "INFO" "Processing file change: $pending_file (changed at $pending_time)"
+                        log "INFO" "Processing file event: $pending_file ($pending_event at $pending_time)"
                         
                         # Make API call
                         if make_api_call "$pending_file" "$pending_time"; then

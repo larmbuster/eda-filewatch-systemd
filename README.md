@@ -71,7 +71,7 @@ sudo nano /etc/eda-filewatch/myfile.conf
 | `RETRY_COUNT` | No | `3` | Number of retry attempts for failed API calls |
 | `RETRY_DELAY` | No | `5` | Delay between retry attempts in seconds |
 | `RATE_LIMIT` | No | `10` | Maximum API calls per minute |
-| `DEBOUNCE_DELAY` | No | `2` | Wait time in seconds after last file event before triggering API call |
+| `DEBOUNCE_DELAY` | No | `5` | Wait time in seconds after last file event before triggering API call |
 | `SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
 | `SSL_CACERT` | No | - | Path to custom CA certificate file |
 | `SSL_CERT` | No | - | Path to client certificate file (mutual TLS) |
@@ -231,6 +231,20 @@ The service requires AAP authentication for launching job templates:
 - Monitor token usage in AAP's activity stream
 - Never commit tokens to version control
 
+## File Events and Triggers
+
+The service monitors the following file events and triggers AAP job templates accordingly:
+
+| Event | Description | Common Causes |
+|-------|-------------|---------------|
+| `CLOSE_WRITE` | File closed after writing | Normal file save in most editors |
+| `MOVED_TO` | File moved/renamed into place | Editors that use atomic saves (write to temp, then move) |
+| `DELETE` | File deleted | `rm` command, file removal |
+| `ATTRIB` | Metadata changed | `chmod`, `chown`, touch commands |
+| `CREATE` | New file created | Some editors, `touch`, file copies |
+
+All events are debounced to prevent multiple API calls from related operations (e.g., delete+create from editors).
+
 ## AAP Integration
 
 The service provides enhanced integration with Ansible Automation Platform, ensuring reliable job template execution with improved error handling.
@@ -283,7 +297,13 @@ The monitoring script includes several security and reliability improvements:
 - **Improved monitoring**: Uses FIFOs instead of subshells for better signal handling
 - **Connection timeouts**: Prevents hanging on network issues
 - **Event debouncing**: Prevents duplicate API calls from rapid file changes (configurable delay)
-- **Directory monitoring**: Monitors the parent directory to catch file recreations by editors
+- **Comprehensive event monitoring**: Tracks multiple file events:
+  - `close_write`: File saves completed
+  - `moved_to`: Atomic file replacements (common editor pattern)
+  - `delete`: File deletions
+  - `attrib`: Permission/ownership changes
+  - `create`: New file creation
+- **Editor compatibility**: Works with vi, vim, nano, VS Code, and other editors that recreate files
 
 ## Troubleshooting
 
