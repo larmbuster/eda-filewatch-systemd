@@ -2,8 +2,37 @@
 
 # EDA File Watch Monitor for Ansible Automation Platform
 # Monitors a specified file for changes and triggers AAP job template launches
+# Can also be run manually to trigger a single API call
 
 set -euo pipefail
+
+# Parse command line arguments
+MANUAL_MODE=false
+if [[ $# -gt 0 ]]; then
+    if [[ "$1" == "--trigger" ]] && [[ -n "${2:-}" ]]; then
+        MANUAL_MODE=true
+        CONFIG_FILE="$2"
+        if [[ ! -f "$CONFIG_FILE" ]]; then
+            echo "Error: Config file '$CONFIG_FILE' not found" >&2
+            exit 1
+        fi
+    elif [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
+        echo "Usage: $0 [--trigger CONFIG_FILE]"
+        echo ""
+        echo "Normal mode (no arguments):"
+        echo "  Runs as a service, continuously monitoring the configured file"
+        echo ""
+        echo "Manual trigger mode:"
+        echo "  --trigger CONFIG_FILE   Load config and trigger a single API call"
+        echo ""
+        echo "Example:"
+        echo "  $0 --trigger /etc/eda-filewatch/myfile.conf"
+        exit 0
+    else
+        echo "Error: Invalid arguments. Use --help for usage information" >&2
+        exit 1
+    fi
+fi
 
 # Configuration - can be overridden by environment variables or config file
 WATCH_FILE="${WATCH_FILE:-}"
@@ -450,7 +479,35 @@ main() {
     done
 }
 
+# Manual trigger mode - make a single API call
+manual_trigger() {
+    log "INFO" "Manual trigger mode - Loading configuration"
+    log "INFO" "Config file: $CONFIG_FILE"
+    
+    # Show current configuration
+    log "INFO" "Configuration:"
+    log "INFO" "  Watch file: $WATCH_FILE"
+    log "INFO" "  API URL: $API_URL"
+    
+    # Make a single API call
+    log "INFO" "Triggering API call..."
+    local current_time=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    if make_api_call "$WATCH_FILE" "$current_time"; then
+        log "INFO" "Manual trigger completed successfully"
+        exit 0
+    else
+        log "ERROR" "Manual trigger failed"
+        exit 1
+    fi
+}
+
 # Start the program
 load_config
 validate_config
-main 
+
+if [[ "$MANUAL_MODE" == "true" ]]; then
+    manual_trigger
+else
+    main
+fi 

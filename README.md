@@ -15,6 +15,7 @@ A robust systemd service that monitors files for changes and triggers Ansible Au
 - **Comprehensive logging** with configurable log levels
 - **Root execution** for unrestricted file access across the system
 - **Easy installation** with streamlined setup script
+- **Manual trigger mode** - trigger API calls on demand using configuration files
 
 ## Prerequisites
 
@@ -329,6 +330,23 @@ export LOG_LEVEL="DEBUG"
 # Run the script as root
 sudo /opt/eda-filewatch/filewatch-monitor.sh
 ```
+
+### Manual Trigger
+
+You can manually trigger an API call using a specific configuration file:
+
+```bash
+# Trigger a single API call using a config file
+sudo /opt/eda-filewatch/filewatch-monitor.sh --trigger /etc/eda-filewatch/myfile.conf
+
+# Show help
+/opt/eda-filewatch/filewatch-monitor.sh --help
+```
+
+This is useful for:
+- Testing your configuration before starting the service
+- Manually triggering AAP job templates
+- Debugging API connectivity issues
 
 ## Uninstallation
 
