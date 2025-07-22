@@ -31,6 +31,10 @@ NC='\033[0m' # No Color
 # Rate limiting variables
 declare -a api_call_times=()
 
+# Debouncing variables
+last_event_time=0
+DEBOUNCE_DELAY="${DEBOUNCE_DELAY:-2}"  # Wait 2 seconds after last event before triggering
+
 # Logging function
 log() {
     local level="$1"
@@ -121,6 +125,12 @@ validate_config() {
     # Validate RATE_LIMIT
     if ! [[ "$RATE_LIMIT" =~ ^[0-9]+$ ]]; then
         log "ERROR" "RATE_LIMIT must be a positive integer, got: $RATE_LIMIT"
+        exit 1
+    fi
+    
+    # Validate DEBOUNCE_DELAY
+    if ! [[ "$DEBOUNCE_DELAY" =~ ^[0-9]+$ ]]; then
+        log "ERROR" "DEBOUNCE_DELAY must be a positive integer, got: $DEBOUNCE_DELAY"
         exit 1
     fi
     
@@ -333,7 +343,7 @@ EOF
 # Enhanced signal handling
 cleanup() {
     log "INFO" "Shutting down file monitor..."
-    # Kill any child processes
+    # Kill any child processes (including debounce timers)
     pkill -P $$ 2>/dev/null || true
     # Clean up any temporary files
     rm -f /tmp/inotify_fifo_$$ 2>/dev/null || true
@@ -352,6 +362,7 @@ main() {
     log "INFO" "Request Timeout: ${API_TIMEOUT}s"
     log "INFO" "Retry Count: $RETRY_COUNT"
     log "INFO" "Rate Limit: $RATE_LIMIT calls/minute"
+    log "INFO" "Debounce Delay: ${DEBOUNCE_DELAY}s"
     
     if [[ -z "$API_TOKEN" ]]; then
         log "ERROR" "AAP Authentication token not configured - this is required!"
@@ -378,6 +389,11 @@ main() {
         local inotify_pid=$!
         
         # Read from fifo with timeout check
+        # Variables for debouncing
+        local pending_file=""
+        local pending_time=""
+        local debounce_timer_pid=""
+        
         while true; do
             # Check if inotifywait is still running
             if ! kill -0 $inotify_pid 2>/dev/null; then
@@ -387,14 +403,32 @@ main() {
             
             # Read with timeout
             if read -r file event time < "$temp_fifo"; then
-                log "INFO" "File change detected: $file ($event) at $time"
+                log "DEBUG" "File event detected: $file ($event) at $time"
                 
-                # Make API call in background to avoid blocking
-                if make_api_call "$file" "$time"; then
-                    log "INFO" "Successfully processed file change event"
-                else
-                    log "WARN" "Failed to process file change event, but continuing to monitor"
+                # Kill any existing debounce timer
+                if [[ -n "$debounce_timer_pid" ]] && kill -0 "$debounce_timer_pid" 2>/dev/null; then
+                    kill "$debounce_timer_pid" 2>/dev/null || true
+                    log "DEBUG" "Cancelled previous debounce timer"
                 fi
+                
+                # Store the latest event details
+                pending_file="$file"
+                pending_time="$time"
+                
+                # Start a new debounce timer in background
+                (
+                    sleep "$DEBOUNCE_DELAY"
+                    log "INFO" "Processing file change: $pending_file (changed at $pending_time)"
+                    
+                    # Make API call
+                    if make_api_call "$pending_file" "$pending_time"; then
+                        log "INFO" "Successfully processed file change event"
+                    else
+                        log "WARN" "Failed to process file change event, but continuing to monitor"
+                    fi
+                ) &
+                debounce_timer_pid=$!
+                
             else
                 # Read failed, check if process is still alive
                 if ! kill -0 $inotify_pid 2>/dev/null; then
@@ -405,6 +439,9 @@ main() {
         
         # Clean up
         kill $inotify_pid 2>/dev/null || true
+        if [[ -n "$debounce_timer_pid" ]] && kill -0 "$debounce_timer_pid" 2>/dev/null; then
+            kill "$debounce_timer_pid" 2>/dev/null || true
+        fi
         rm -f "$temp_fifo"
         
         # If we get here, inotifywait exited

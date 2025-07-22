@@ -70,6 +70,7 @@ sudo nano /etc/eda-filewatch/myfile.conf
 | `RETRY_COUNT` | No | `3` | Number of retry attempts for failed API calls |
 | `RETRY_DELAY` | No | `5` | Delay between retry attempts in seconds |
 | `RATE_LIMIT` | No | `10` | Maximum API calls per minute |
+| `DEBOUNCE_DELAY` | No | `2` | Wait time in seconds after last file event before triggering API call |
 | `SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
 | `SSL_CACERT` | No | - | Path to custom CA certificate file |
 | `SSL_CERT` | No | - | Path to client certificate file (mutual TLS) |
@@ -277,6 +278,7 @@ The monitoring script includes several security and reliability improvements:
 - **Enhanced error handling**: Distinguishes between client/server errors
 - **Improved monitoring**: Uses FIFOs instead of subshells for better signal handling
 - **Connection timeouts**: Prevents hanging on network issues
+- **Event debouncing**: Prevents duplicate API calls from rapid file changes (configurable delay)
 
 ## Troubleshooting
 
