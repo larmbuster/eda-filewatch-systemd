@@ -1,15 +1,15 @@
-# EDA File Watch Monitor with systemd
+# EDA File Watch Monitor for Ansible Automation Platform
 
 ![AI Assisted Yes](https://img.shields.io/badge/AI%20Assisted-Yes-green?style=for-the-badge)
 
 ⚠️ **This tool is under active development, features may not work entirely or as expected. Use at your own risk!!** ⚠️
 
-A robust systemd service that monitors files for changes and triggers API calls when modifications are detected. Perfect for Event-Driven Architecture (EDA) scenarios where file changes need to trigger downstream processes.
+A robust systemd service that monitors files for changes and triggers Ansible Automation Platform (AAP) job template launches when modifications are detected. Perfect for Event-Driven Ansible scenarios where file changes need to trigger automation workflows.
 
 ## Features
 
 - **Real-time file monitoring** using Linux inotify
-- **Configurable API calls** with custom HTTP methods and timeouts
+- **Direct AAP integration** with job template launching
 - **Multiple instance support** - monitor multiple files simultaneously
 - **Robust error handling** with automatic retries
 - **Comprehensive logging** with configurable log levels
@@ -63,10 +63,10 @@ sudo nano /etc/eda-filewatch/myfile.conf
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `WATCH_FILE` | Yes | - | Absolute path to the file to monitor |
-| `API_URL` | Yes | - | Complete URL to call when file changes |
-| `API_METHOD` | No | `POST` | HTTP method for API calls |
+| `API_URL` | Yes | - | AAP job template launch URL (format: `https://server/api/controller/v2/job_templates/ID/launch/`) |
+| `API_METHOD` | No | `POST` | HTTP method (must be POST for AAP) |
 | `API_TIMEOUT` | No | `30` | Timeout for API calls in seconds |
-| `API_TOKEN` | No | - | Bearer token for API authentication |
+| `API_TOKEN` | Yes | - | AAP authentication token (generate from AAP UI) |
 | `RETRY_COUNT` | No | `3` | Number of retry attempts for failed API calls |
 | `RETRY_DELAY` | No | `5` | Delay between retry attempts in seconds |
 | `RATE_LIMIT` | No | `10` | Maximum API calls per minute |
@@ -79,39 +79,30 @@ sudo nano /etc/eda-filewatch/myfile.conf
 ### Example Configuration
 
 ```bash
-# Monitor a configuration file
-WATCH_FILE="/etc/myapp/config.json"
+# Monitor an Ansible inventory file
+WATCH_FILE="/etc/ansible/inventory/hosts"
 
-# Call webhook when file changes
-API_URL="https://api.myservice.com/webhooks/config-changed"
+# AAP job template launch URL
+API_URL="https://aap.example.com/api/controller/v2/job_templates/42/launch/"
 
-# Use PUT method with longer timeout
-API_METHOD="PUT"
-API_TIMEOUT=60
+# Required for AAP
+API_METHOD="POST"
+API_TOKEN="your-aap-authentication-token"
+
+# For self-signed certificates
+SSL_VERIFY="false"
 
 # Enable debug logging
 LOG_LEVEL="DEBUG"
 ```
 
-### Example with Ansible Automation Platform
+### Generating AAP Authentication Token
 
-```bash
-# Monitor Ansible inventory file
-WATCH_FILE="/etc/ansible/inventory/hosts"
-
-# Call Ansible Automation Platform webhook
-API_URL="https://ansible.example.com/api/v2/job_templates/123/launch/"
-
-# Use authentication token
-API_TOKEN="your-ansible-automation-platform-token"
-
-# Use POST method (default for AAP)
-API_METHOD="POST"
-API_TIMEOUT=60
-
-# Enable info logging
-LOG_LEVEL="INFO"
-```
+1. Log into your AAP web interface
+2. Navigate to Users → Your Username → Tokens
+3. Click "Add" to create a new token
+4. Provide a description and scope ("Write" for job launching)
+5. Copy the generated token to your configuration file
 
 ## Usage
 
@@ -217,39 +208,44 @@ The service now properly handles SSL certificate errors:
 - ✅ **Rotate certificates** regularly
 - ⚠️ **Only use SSL_VERIFY="false"** for testing/development
 
-## API Authentication
+## AAP Authentication
 
-The service supports Bearer token authentication for secure API calls:
+The service requires AAP authentication for launching job templates:
 
-### Setting Up Authentication
+### Token Setup
 
-1. **For Ansible Automation Platform:**
-   - Generate a personal access token in AAP
-   - Add it to your configuration: `API_TOKEN="your-aap-token"`
+1. Generate a personal access token in AAP (see example above)
+2. Add it to your configuration: `API_TOKEN="your-aap-token"`
+3. Ensure the token has "Write" scope for job template launching
 
-2. **For other APIs:**
-   - Obtain your API token from your service provider
-   - Configure it in your instance configuration file
+### Security Best Practices
 
-### Security Considerations
-
-- Store tokens securely in configuration files with restricted permissions
-- Use environment variables for sensitive tokens in production
-- Rotate tokens regularly according to your security policy
+- Store tokens in configuration files with 600 permissions
+- Use AAP's token expiration features
+- Rotate tokens regularly
+- Monitor token usage in AAP's activity stream
 - Never commit tokens to version control
 
-## API Payload
+## AAP Integration
 
-When a file change is detected, the service sends a JSON payload to your API endpoint:
+When a file change is detected, the service launches an AAP job template with the following extra variables:
 
 ```json
 {
-    "file_path": "/path/to/watched/file.txt",
-    "change_time": "2023-12-07 14:30:15",
-    "event": "file_modified",
-    "hostname": "server-hostname"
+    "extra_vars": {
+        "file_path": "/path/to/watched/file.txt",
+        "change_time": "2023-12-07 14:30:15",
+        "event": "file_modified",
+        "hostname": "server-hostname"
+    }
 }
 ```
+
+These variables are available in your Ansible playbooks as:
+- `{{ file_path }}` - The full path of the modified file
+- `{{ change_time }}` - When the change was detected
+- `{{ event }}` - The type of change (always "file_modified")
+- `{{ hostname }}` - The hostname of the system running the monitor
 
 ## Security Features
 
@@ -294,10 +290,11 @@ The monitoring script includes several security and reliability improvements:
    - Check file permissions
    - Verify the path in configuration is absolute
 
-3. **API calls failing:**
-   - Test the API endpoint manually with curl
-   - Check network connectivity
-   - Verify API URL and method in configuration
+3. **AAP job template not launching:**
+   - Verify the job template ID exists in AAP
+   - Check token has proper permissions
+   - Test manually: `curl -X POST -H "Authorization: Bearer $TOKEN" $API_URL`
+   - Verify AAP URL format matches: `/api/controller/v2/job_templates/ID/launch/`
 
 4. **Permission issues:**
    - Ensure the `eda-filewatch` user can read the watched file

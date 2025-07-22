@@ -1,4 +1,4 @@
-# EDA File Watch Monitor Configuration
+# EDA File Watch Monitor Configuration for Ansible Automation Platform
 # Copy this file to /etc/eda-filewatch/myfile.conf
 # and customize the values below
 
@@ -6,11 +6,11 @@
 # This should be an absolute path to the file you want to monitor
 WATCH_FILE="/path/to/your/file.txt"
 
-# Required: API URL to call when file changes
-# This should be a complete URL including protocol (http/https)
-API_URL="https://your-api-endpoint.com/webhook"
+# Required: AAP Job Template Launch URL
+# Format: https://<server>/api/controller/v2/job_templates/<id>/launch/
+API_URL="https://your-aap-server.com/api/controller/v2/job_templates/123/launch/"
 
-# Optional: HTTP method to use for API calls (default: POST)
+# HTTP method for AAP (must be POST)
 API_METHOD="POST"
 
 # Optional: Timeout for API calls in seconds (default: 30)
@@ -19,9 +19,10 @@ API_TIMEOUT=30
 # Optional: Log level (DEBUG, INFO, WARN, ERROR) (default: INFO)
 LOG_LEVEL="INFO"
 
-# Optional: Authentication token for API calls (e.g., for Ansible Automation Platform)
-# If set, will be sent as "Authorization: Bearer <token>" header
-# API_TOKEN="your-api-token-here"
+# Required: AAP Authentication token
+# Will be sent as "Authorization: Bearer <token>" header
+# Generate from AAP UI: Users -> Tokens -> Add
+API_TOKEN="your-aap-token-here"
 
 # Optional: Number of retry attempts for failed API calls (default: 3)
 # RETRY_COUNT=3
@@ -38,36 +39,31 @@ LOG_LEVEL="INFO"
 # SSL_CERT="/path/to/client-cert.pem"  # Client certificate file (for mutual TLS)
 # SSL_KEY="/path/to/client-key.pem"    # Client private key file (for mutual TLS)
 
-# Optional: Additional curl options (advanced users only)
-# CURL_EXTRA_ARGS="--header 'X-Custom-Header: value'"
+# AAP-specific SSL options for self-signed certificates
+# Uncomment one of the following based on your setup:
 
-# Example configurations:
+# Example AAP configurations:
 # 
-# For monitoring a configuration file:
-# WATCH_FILE="/etc/myapp/config.json"
-# API_URL="https://api.myapp.com/hooks/config-changed"
-# API_METHOD="PUT"
+# For monitoring an Ansible inventory file:
+# WATCH_FILE="/etc/ansible/inventory/hosts"
+# API_URL="https://aap.example.com/api/controller/v2/job_templates/42/launch/"
+# API_METHOD="POST"
+# API_TOKEN="your-aap-token"
+# SSL_VERIFY="true"  # For valid certificates
 # LOG_LEVEL="INFO"
 # 
-# For monitoring a data file with authentication:
-# WATCH_FILE="/var/data/myapp/important-data.txt"
-# API_URL="https://api.myapp.com/hooks/data-updated"
+# For AAP with self-signed certificate:
+# WATCH_FILE="/etc/ansible/inventory/hosts"
+# API_URL="https://aapcontroller-rhel95/api/controller/v2/job_templates/13/launch/"
 # API_METHOD="POST"
-# API_TIMEOUT=60
-# API_TOKEN="your-ansible-automation-platform-token"
-# LOG_LEVEL="DEBUG"
-# 
-# For internal APIs with self-signed certificates:
-# WATCH_FILE="/etc/internal/config.json"
-# API_URL="https://internal-api.company.com/webhook"
-# API_METHOD="POST"
-# SSL_VERIFY="false"
+# API_TOKEN="your-aap-token"
+# SSL_VERIFY="false"  # Disable verification for self-signed
 # LOG_LEVEL="INFO"
 # 
-# For APIs with custom CA certificates:
-# WATCH_FILE="/etc/secure/data.json"
-# API_URL="https://secure-api.company.com/webhook"
+# For AAP with custom CA certificate:
+# WATCH_FILE="/etc/ansible/inventory/hosts"
+# API_URL="https://aap.company.com/api/controller/v2/job_templates/7/launch/"
 # API_METHOD="POST"
-# SSL_CACERT="/etc/ssl/certs/company-ca.pem"
-# API_TOKEN="secure-token"
+# API_TOKEN="your-aap-token"
+# SSL_CACERT="/etc/pki/tls/certs/company-ca.pem"  # Custom CA cert
 # LOG_LEVEL="INFO" 

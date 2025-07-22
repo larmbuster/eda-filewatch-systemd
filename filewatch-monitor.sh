@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# EDA File Watch Monitor
-# Monitors a specified file for changes and triggers API calls
+# EDA File Watch Monitor for Ansible Automation Platform
+# Monitors a specified file for changes and triggers AAP job template launches
 
 set -euo pipefail
 
@@ -73,33 +73,11 @@ load_config() {
             exit 1
         fi
         
-        # Source config file in restricted environment
-        (
-            set -e
-            source "$CONFIG_FILE"
-            # Export validated variables
-            printf 'WATCH_FILE=%q\n' "$WATCH_FILE"
-            printf 'API_URL=%q\n' "$API_URL"
-            printf 'API_METHOD=%q\n' "$API_METHOD"
-            printf 'API_TIMEOUT=%q\n' "$API_TIMEOUT"
-            printf 'API_TOKEN=%q\n' "$API_TOKEN"
-            printf 'LOG_LEVEL=%q\n' "$LOG_LEVEL"
-            printf 'RETRY_COUNT=%q\n' "${RETRY_COUNT:-3}"
-            printf 'RETRY_DELAY=%q\n' "${RETRY_DELAY:-5}"
-            printf 'RATE_LIMIT=%q\n' "${RATE_LIMIT:-10}"
-            printf 'SSL_VERIFY=%q\n' "${SSL_VERIFY:-true}"
-            printf 'SSL_CACERT=%q\n' "${SSL_CACERT:-}"
-            printf 'SSL_CERT=%q\n' "${SSL_CERT:-}"
-            printf 'SSL_KEY=%q\n' "${SSL_KEY:-}"
-        ) > /tmp/config_vars.$$
-        
-        if [[ $? -eq 0 ]]; then
-            source /tmp/config_vars.$$
-            rm -f /tmp/config_vars.$$
-        else
-            log "ERROR" "Failed to load config file safely"
+        # Source config file directly
+        source "$CONFIG_FILE" || {
+            log "ERROR" "Failed to load config file"
             exit 1
-        fi
+        }
     fi
 }
 
@@ -112,6 +90,13 @@ validate_config() {
     
     if [[ -z "$API_URL" ]]; then
         log "ERROR" "API_URL is not set. Please set it in environment or config file."
+        exit 1
+    fi
+    
+    # Validate AAP API URL format
+    if ! [[ "$API_URL" =~ /api/(v2|controller/v2)/job_templates/[0-9]+/launch/? ]]; then
+        log "ERROR" "Invalid AAP API URL format. Expected: https://<server>/api/controller/v2/job_templates/<id>/launch/"
+        log "ERROR" "Got: $API_URL"
         exit 1
     fi
     
@@ -236,19 +221,22 @@ make_api_call() {
     # Apply rate limiting
     check_rate_limit
     
-    log "INFO" "Making API call to $API_URL"
+    log "INFO" "Launching AAP job template: $API_URL"
     
-    # Prepare JSON payload with proper escaping
+    # Prepare JSON payload for AAP with proper escaping
     local escaped_file_path=$(json_escape "$file_path")
     local escaped_change_time=$(json_escape "$change_time")
     local escaped_hostname=$(json_escape "$(hostname)")
     
+    # AAP expects extra_vars format
     local payload=$(cat <<EOF
 {
-    "file_path": "$escaped_file_path",
-    "change_time": "$escaped_change_time",
-    "event": "file_modified",
-    "hostname": "$escaped_hostname"
+    "extra_vars": {
+        "file_path": "$escaped_file_path",
+        "change_time": "$escaped_change_time",
+        "event": "file_modified",
+        "hostname": "$escaped_hostname"
+    }
 }
 EOF
 )
@@ -318,16 +306,17 @@ EOF
             response_body=$(echo "$response" | head -n -1)
             
             if [[ "$http_code" =~ ^[0-9]+$ ]] && [[ "$http_code" -ge 200 && "$http_code" -lt 300 ]]; then
-                log "INFO" "API call successful (HTTP $http_code)"
-                log "DEBUG" "Response: $response_body"
+                log "INFO" "AAP job template launched successfully (HTTP $http_code)"
+                log "DEBUG" "AAP Response: $response_body"
                 return 0
             elif [[ "$http_code" =~ ^[0-9]+$ ]] && [[ "$http_code" -ge 400 && "$http_code" -lt 500 ]]; then
-                log "ERROR" "API call failed with client error (HTTP $http_code)"
-                log "ERROR" "Response: $response_body"
+                log "ERROR" "AAP job template launch failed with client error (HTTP $http_code)"
+                log "ERROR" "AAP Response: $response_body"
+                log "ERROR" "Check: Token permissions, job template ID, and AAP URL format"
                 return 1  # Don't retry client errors
             else
-                log "WARN" "API call failed (HTTP $http_code), will retry"
-                log "DEBUG" "Response: $response_body"
+                log "WARN" "AAP job template launch failed (HTTP $http_code), will retry"
+                log "DEBUG" "AAP Response: $response_body"
             fi
         else
             log "WARN" "Curl failed with exit code $curl_exit_code, will retry"
@@ -337,7 +326,7 @@ EOF
         ((attempt++))
     done
     
-    log "ERROR" "API call failed after $RETRY_COUNT attempts"
+    log "ERROR" "AAP job template launch failed after $RETRY_COUNT attempts"
     return 1
 }
 
@@ -346,6 +335,8 @@ cleanup() {
     log "INFO" "Shutting down file monitor..."
     # Kill any child processes
     pkill -P $$ 2>/dev/null || true
+    # Clean up any temporary files
+    rm -f /tmp/inotify_fifo_$$ 2>/dev/null || true
     exit 0
 }
 
@@ -354,19 +345,19 @@ trap cleanup SIGTERM SIGINT SIGHUP
 
 # Main monitoring loop with improved error handling
 main() {
-    log "INFO" "Starting EDA File Watch Monitor"
+    log "INFO" "Starting EDA File Watch Monitor for Ansible Automation Platform"
     log "INFO" "Watching file: $WATCH_FILE"
-    log "INFO" "API URL: $API_URL"
-    log "INFO" "API Method: $API_METHOD"
-    log "INFO" "API Timeout: ${API_TIMEOUT}s"
+    log "INFO" "AAP Job Template URL: $API_URL"
+    log "INFO" "HTTP Method: $API_METHOD"
+    log "INFO" "Request Timeout: ${API_TIMEOUT}s"
     log "INFO" "Retry Count: $RETRY_COUNT"
     log "INFO" "Rate Limit: $RATE_LIMIT calls/minute"
     
-    if [[ -n "$API_TOKEN" ]]; then
-        log "INFO" "API Authentication: Enabled (Bearer token)"
-    else
-        log "INFO" "API Authentication: Disabled"
+    if [[ -z "$API_TOKEN" ]]; then
+        log "ERROR" "AAP Authentication token not configured - this is required!"
+        exit 1
     fi
+    log "INFO" "AAP Authentication: Token configured"
     
     # Start monitoring
     log "INFO" "Starting file monitor..."
@@ -379,22 +370,36 @@ main() {
         fi
         mkfifo "$temp_fifo"
         
-        # Start inotifywait in background
-        inotifywait -e modify,move,create,delete "$WATCH_FILE" \
+        # Start inotifywait in monitor mode in background
+        inotifywait -m -e modify,move,create,delete "$WATCH_FILE" \
             --format '%w%f %e %T' --timefmt '%Y-%m-%d %H:%M:%S' \
-            --outfile "$temp_fifo" 2>/dev/null &
+            2>/dev/null > "$temp_fifo" &
         
         local inotify_pid=$!
         
-        # Read from fifo
-        while read -r file event time < "$temp_fifo"; do
-            log "INFO" "File change detected: $file ($event) at $time"
+        # Read from fifo with timeout check
+        while true; do
+            # Check if inotifywait is still running
+            if ! kill -0 $inotify_pid 2>/dev/null; then
+                log "WARN" "inotifywait process died"
+                break
+            fi
             
-            # Make API call in background to avoid blocking
-            if make_api_call "$file" "$time"; then
-                log "INFO" "Successfully processed file change event"
+            # Read with timeout
+            if read -r file event time < "$temp_fifo"; then
+                log "INFO" "File change detected: $file ($event) at $time"
+                
+                # Make API call in background to avoid blocking
+                if make_api_call "$file" "$time"; then
+                    log "INFO" "Successfully processed file change event"
+                else
+                    log "WARN" "Failed to process file change event, but continuing to monitor"
+                fi
             else
-                log "WARN" "Failed to process file change event, but continuing to monitor"
+                # Read failed, check if process is still alive
+                if ! kill -0 $inotify_pid 2>/dev/null; then
+                    break
+                fi
             fi
         done
         

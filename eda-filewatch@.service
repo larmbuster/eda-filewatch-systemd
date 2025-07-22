@@ -1,5 +1,5 @@
 [Unit]
-Description=EDA File Watch Monitor for %i
+Description=EDA File Watch Monitor for AAP (%i)
 Documentation=https://github.com/user/eda-filewatch-systemd
 After=network.target
 Wants=network.target
@@ -23,12 +23,12 @@ Environment=LOG_LEVEL=INFO
 
 # Security settings
 NoNewPrivileges=true
-PrivateTmp=true
+PrivateTmp=false
 PrivateDevices=true
-ProtectHome=true
+ProtectHome=false
 ProtectSystem=strict
-ReadWritePaths=/var/log/eda-filewatch
-ReadOnlyPaths=/etc/eda-filewatch
+ReadWritePaths=/var/log/eda-filewatch /tmp
+ReadOnlyPaths=/etc/eda-filewatch /home /var /opt /usr
 
 # Resource limits
 LimitNOFILE=1024
