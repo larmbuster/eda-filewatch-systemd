@@ -9,4 +9,4 @@
         regexp: '^FOO='
         line: FOO=foo
         create: true
-        mode: '0644'
+        mode: '0744'
