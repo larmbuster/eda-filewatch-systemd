@@ -12,6 +12,9 @@ Group=root
 WorkingDirectory=/opt/eda-filewatch
 ExecStart=/opt/eda-filewatch/filewatch-monitor.sh
 ExecReload=/bin/kill -HUP $MAINPID
+# Log output to both journal and file
+StandardOutput=append:/var/log/eda-filewatch/%i.log
+StandardError=append:/var/log/eda-filewatch/%i.log
 KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=30

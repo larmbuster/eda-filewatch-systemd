@@ -129,11 +129,14 @@ sudo systemctl stop eda-filewatch@myfile
 # Restart the service
 sudo systemctl restart eda-filewatch@myfile
 
-# View logs
+# View logs from journal
 sudo journalctl -u eda-filewatch@myfile -f
 
-# View recent logs
+# View recent logs from journal
 sudo journalctl -u eda-filewatch@myfile --since "1 hour ago"
+
+# View logs from file (also available in /var/log/eda-filewatch/)
+sudo tail -f /var/log/eda-filewatch/myfile.log
 ```
 
 ### Multiple Instances
@@ -363,7 +366,7 @@ sudo systemctl daemon-reload
 /etc/systemd/system/
 └── eda-filewatch@.service       # Systemd service template
 
-/var/log/eda-filewatch/          # Log directory (if needed)
+/var/log/eda-filewatch/          # Log files for each instance (*.log)
 ```
 
 ## Contributing
