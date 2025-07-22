@@ -8,3 +8,5 @@
         path: /home/larmbuster/git-repos/eda-filewatch-systemd/foo.txt
         regexp: '^FOO='
         line: FOO=foo
+        create: true
+        mode: '0644'
