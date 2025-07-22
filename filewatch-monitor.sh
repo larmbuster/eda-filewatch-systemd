@@ -401,6 +401,7 @@ main() {
     
     # Start monitoring
     log "INFO" "Starting file monitor..."
+    log "INFO" "Note: Monitoring directory to catch file recreations by editors"
     
     while true; do
         # Use a more robust approach to handle the pipe
@@ -410,8 +411,13 @@ main() {
         fi
         mkfifo "$temp_fifo"
         
+        # Get directory and filename
+        local watch_dir=$(dirname "$WATCH_FILE")
+        local watch_filename=$(basename "$WATCH_FILE")
+        
         # Start inotifywait in monitor mode in background
-        inotifywait -m -e modify,move,create,delete "$WATCH_FILE" \
+        # Monitor the directory to catch file recreations
+        inotifywait -m -e modify,move,create,delete,close_write "$watch_dir" \
             --format '%w%f %e %T' --timefmt '%Y-%m-%d %H:%M:%S' \
             2>/dev/null > "$temp_fifo" &
         
@@ -432,31 +438,34 @@ main() {
             
             # Read with timeout
             if read -r file event time < "$temp_fifo"; then
-                log "DEBUG" "File event detected: $file ($event) at $time"
-                
-                # Kill any existing debounce timer
-                if [[ -n "$debounce_timer_pid" ]] && kill -0 "$debounce_timer_pid" 2>/dev/null; then
-                    kill "$debounce_timer_pid" 2>/dev/null || true
-                    log "DEBUG" "Cancelled previous debounce timer"
-                fi
-                
-                # Store the latest event details
-                pending_file="$file"
-                pending_time="$time"
-                
-                # Start a new debounce timer in background
-                (
-                    sleep "$DEBOUNCE_DELAY"
-                    log "INFO" "Processing file change: $pending_file (changed at $pending_time)"
+                # Only process events for our specific file
+                if [[ "$file" == "$WATCH_FILE" ]]; then
+                    log "DEBUG" "File event detected: $file ($event) at $time"
                     
-                    # Make API call
-                    if make_api_call "$pending_file" "$pending_time"; then
-                        log "INFO" "Successfully processed file change event"
-                    else
-                        log "WARN" "Failed to process file change event, but continuing to monitor"
+                    # Kill any existing debounce timer
+                    if [[ -n "$debounce_timer_pid" ]] && kill -0 "$debounce_timer_pid" 2>/dev/null; then
+                        kill "$debounce_timer_pid" 2>/dev/null || true
+                        log "DEBUG" "Cancelled previous debounce timer"
                     fi
-                ) &
-                debounce_timer_pid=$!
+                    
+                    # Store the latest event details
+                    pending_file="$file"
+                    pending_time="$time"
+                    
+                    # Start a new debounce timer in background
+                    (
+                        sleep "$DEBOUNCE_DELAY"
+                        log "INFO" "Processing file change: $pending_file (changed at $pending_time)"
+                        
+                        # Make API call
+                        if make_api_call "$pending_file" "$pending_time"; then
+                            log "INFO" "Successfully processed file change event"
+                        else
+                            log "WARN" "Failed to process file change event, but continuing to monitor"
+                        fi
+                    ) &
+                    debounce_timer_pid=$!
+                fi
                 
             else
                 # Read failed, check if process is still alive

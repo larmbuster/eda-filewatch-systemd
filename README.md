@@ -283,6 +283,7 @@ The monitoring script includes several security and reliability improvements:
 - **Improved monitoring**: Uses FIFOs instead of subshells for better signal handling
 - **Connection timeouts**: Prevents hanging on network issues
 - **Event debouncing**: Prevents duplicate API calls from rapid file changes (configurable delay)
+- **Directory monitoring**: Monitors the parent directory to catch file recreations by editors
 
 ## Troubleshooting
 
