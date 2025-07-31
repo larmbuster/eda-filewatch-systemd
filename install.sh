@@ -91,6 +91,9 @@ create_directories() {
     mkdir -p "$CONFIG_DIR"
     mkdir -p "$LOG_DIR"
     
+    # Create AIDE database directory
+    mkdir -p "/var/lib/aide"
+    
     # Set ownership and permissions
     chown root:root "$INSTALL_DIR"
     chmod 755 "$INSTALL_DIR"
@@ -100,6 +103,10 @@ create_directories() {
     
     chown root:root "$LOG_DIR"
     chmod 755 "$LOG_DIR"
+    
+    # Set AIDE directory permissions
+    chown root:root "/var/lib/aide"
+    chmod 700 "/var/lib/aide"
     
     print_status "Directories created successfully"
 }

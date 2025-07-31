@@ -408,6 +408,17 @@ init_aide() {
         exit 1
     fi
     
+    # Ensure parent directory exists first
+    local aide_parent_dir="/var/lib/aide"
+    if [[ ! -d "$aide_parent_dir" ]]; then
+        if ! mkdir -p "$aide_parent_dir" 2>/dev/null; then
+            log "ERROR" "Failed to create AIDE parent directory: $aide_parent_dir"
+            log "ERROR" "Please run: sudo mkdir -p $aide_parent_dir && sudo chmod 700 $aide_parent_dir"
+            exit 1
+        fi
+        chmod 700 "$aide_parent_dir" 2>/dev/null || true
+    fi
+    
     if ! mkdir -p "$aide_db_dir" 2>/dev/null; then
         log "ERROR" "Failed to create AIDE database directory: $aide_db_dir"
         exit 1
