@@ -25,15 +25,16 @@ RestartSec=5
 Environment=CONFIG_FILE=/etc/eda-filewatch/%i.conf
 Environment=LOG_LEVEL=INFO
 
-# Security settings - relaxed for root access to all files
-NoNewPrivileges=false
+# Security settings - balanced for AIDE monitoring
+NoNewPrivileges=true
 PrivateTmp=false
-PrivateDevices=false
+PrivateDevices=true
+# AIDE needs to read files anywhere on the system
 ProtectHome=false
 ProtectSystem=false
-# Remove path restrictions to allow access to all files
-#ReadWritePaths=/var/log/eda-filewatch /tmp
-#ReadOnlyPaths=/etc/eda-filewatch /home /var /opt /usr
+# Allow write access only where needed
+ReadWritePaths=/var/log/eda-filewatch /var/lib/aide /tmp /etc/eda-filewatch
+# Note: Running as root with full read access is required for AIDE to monitor any file
 
 # Resource limits
 LimitNOFILE=1024

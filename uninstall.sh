@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# EDA File Watch Monitor Uninstallation Script
+# AIDE-based File Watch Monitor Uninstallation Script
 # This script removes all components installed by install.sh
 
 set -euo pipefail
@@ -46,12 +46,13 @@ check_root() {
 
 # Confirmation prompt
 confirm_uninstall() {
-    print_warning "This will remove the EDA File Watch Monitor service and all its components."
+    print_warning "This will remove the AIDE-based File Watch Monitor service and all its components."
     print_warning "The following will be removed:"
     echo "  - All running eda-filewatch@ service instances"
     echo "  - Service files from $SYSTEMD_DIR"
     echo "  - Scripts and files from $INSTALL_DIR"
     echo "  - Configuration files from $CONFIG_DIR"
+    echo "  - AIDE databases from /var/lib/aide"
     echo "  - Log files from $LOG_DIR"
     echo
     read -p "Are you sure you want to continue? (yes/NO): " confirmation
@@ -117,18 +118,23 @@ remove_config_dir() {
     if [[ -d "$CONFIG_DIR" ]]; then
         # Check if there are custom config files
         local config_files=$(find "$CONFIG_DIR" -name "*.conf" -type f 2>/dev/null | wc -l)
+        local aide_configs=$(find "$CONFIG_DIR" -name "aide-*.conf" -type f 2>/dev/null | wc -l)
         
         if [[ $config_files -gt 0 ]]; then
             print_warning "Found $config_files configuration file(s) in $CONFIG_DIR"
+            if [[ $aide_configs -gt 0 ]]; then
+                print_warning "Found $aide_configs AIDE configuration file(s)"
+            fi
             read -p "Do you want to remove configuration files as well? (yes/NO): " remove_configs
             
             if [[ "$remove_configs" == "yes" ]]; then
                 rm -rf "$CONFIG_DIR"
                 print_status "Removed $CONFIG_DIR and all configuration files"
             else
-                # Remove only the template file
+                # Remove only the template file and AIDE configs
                 rm -f "$CONFIG_DIR/config.template"
-                print_status "Kept configuration files, removed only config.template"
+                rm -f "$CONFIG_DIR"/aide-*.conf
+                print_status "Kept user configuration files, removed template and AIDE configs"
                 print_warning "Configuration directory $CONFIG_DIR was preserved"
             fi
         else
@@ -138,6 +144,32 @@ remove_config_dir() {
     else
         print_status "Configuration directory not found"
     fi
+}
+
+# Remove AIDE databases
+remove_aide_databases() {
+    print_status "Checking for AIDE databases..."
+    
+    # Default AIDE database locations
+    local aide_dirs=("/var/lib/aide" "/var/lib/eda-filewatch")
+    
+    for dir in "${aide_dirs[@]}"; do
+        if [[ -d "$dir" ]]; then
+            local db_files=$(find "$dir" -name "aide.db*" -type f 2>/dev/null | wc -l)
+            
+            if [[ $db_files -gt 0 ]]; then
+                print_warning "Found $db_files AIDE database file(s) in $dir"
+                read -p "Do you want to remove AIDE databases? (yes/NO): " remove_dbs
+                
+                if [[ "$remove_dbs" == "yes" ]]; then
+                    rm -rf "$dir"
+                    print_status "Removed AIDE databases from $dir"
+                else
+                    print_warning "AIDE databases preserved in $dir"
+                fi
+            fi
+        fi
+    done
 }
 
 # Remove log directory
@@ -190,13 +222,13 @@ show_summary() {
     fi
     
     echo
-    print_status "The EDA File Watch Monitor has been completely removed from your system."
+    print_status "The AIDE-based File Watch Monitor has been completely removed from your system."
 }
 
 # Main uninstallation function
 main() {
-    echo "EDA File Watch Monitor Uninstallation Script"
-    echo "============================================"
+    echo "AIDE-based File Watch Monitor Uninstallation Script"
+    echo "==================================================="
     echo
     
     check_root
@@ -207,6 +239,7 @@ main() {
     remove_systemd_service
     remove_install_dir
     remove_config_dir
+    remove_aide_databases
     remove_log_dir
     
     show_summary

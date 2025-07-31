@@ -33,6 +33,10 @@ API_TOKEN="your-aap-token-here"
 # Optional: Rate limit for API calls per minute (default: 10)
 # RATE_LIMIT=10
 
+# Optional: How often to check for changes using AIDE in seconds (default: 60)
+# Minimum recommended: 30 seconds
+CHECK_INTERVAL=60
+
 # Optional: SSL/Certificate options
 # SSL_VERIFY="true"                    # Enable/disable SSL certificate verification (default: true)
 # SSL_CACERT="/path/to/ca-cert.pem"    # Custom CA certificate file

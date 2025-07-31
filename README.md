@@ -1,35 +1,39 @@
-# EDA File Watch Monitor for Ansible Automation Platform
+# AIDE-based File Integrity Monitor for Ansible Automation Platform
 
 ![AI Assisted Yes](https://img.shields.io/badge/AI%20Assisted-Yes-green?style=for-the-badge)
 
 ⚠️ **This tool is under active development, features may not work entirely or as expected. Use at your own risk!!** ⚠️
 
-A robust systemd service that monitors files for changes and triggers Ansible Automation Platform (AAP) job template launches when modifications are detected. Specifically designed for seamless integration with AAP's Event-Driven Ansible capabilities, enabling automated responses to file system changes with enhanced error handling and reliability.
+A robust systemd service that uses AIDE (Advanced Intrusion Detection Environment) to monitor file integrity and triggers Ansible Automation Platform (AAP) job template launches when modifications are detected. Specifically designed for RHEL 8/9 systems with seamless integration with AAP's Event-Driven Ansible capabilities, enabling automated responses to file integrity changes with enhanced security and reliability.
 
 ## Features
 
-- **Real-time file monitoring** using Linux inotify
+- **File integrity monitoring** using AIDE (Advanced Intrusion Detection Environment)
 - **Enhanced AAP integration** with improved job template launching and error handling
 - **Multiple instance support** - monitor multiple files simultaneously
 - **Advanced error handling** with automatic retries and better error classification
 - **Comprehensive logging** with configurable log levels
 - **Root execution** for unrestricted file access across the system
 - **Easy installation** with streamlined setup script
-- **Manual trigger mode** - trigger API calls on demand using configuration files
+- **Configurable check intervals** - balance between responsiveness and system load
+- **Detailed change detection** - tracks permissions, ownership, size, timestamps, and content
 
 ## Prerequisites
 
-- Linux system with systemd
+- RHEL 8/9 system with systemd
 - Root/sudo access for installation and service operation
-- Required packages: `inotify-tools`, `curl`
+- Required packages: `aide`, `curl`
 
 ### Installing Dependencies
 
-**CentOS/RHEL/Fedora:**
+**RHEL 8/9:**
 ```bash
-sudo yum install inotify-tools curl
-# or on newer systems:
-sudo dnf install inotify-tools curl
+sudo dnf install aide curl
+```
+
+**RHEL 7:**
+```bash
+sudo yum install aide curl
 ```
 
 ## Installation
@@ -71,7 +75,7 @@ sudo nano /etc/eda-filewatch/myfile.conf
 | `RETRY_COUNT` | No | `3` | Number of retry attempts for failed API calls |
 | `RETRY_DELAY` | No | `5` | Delay between retry attempts in seconds |
 | `RATE_LIMIT` | No | `10` | Maximum API calls per minute |
-| `DEBOUNCE_DELAY` | No | `5` | Wait time in seconds after last file event before triggering API call |
+| `CHECK_INTERVAL` | No | `60` | How often to run AIDE checks in seconds (minimum recommended: 30) |
 | `SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
 | `SSL_CACERT` | No | - | Path to custom CA certificate file |
 | `SSL_CERT` | No | - | Path to client certificate file (mutual TLS) |
@@ -233,17 +237,19 @@ The service requires AAP authentication for launching job templates:
 
 ## File Events and Triggers
 
-The service monitors the following file events and triggers AAP job templates accordingly:
+The service uses AIDE to monitor file integrity and detects the following types of changes:
 
-| Event | Description | Common Causes |
-|-------|-------------|---------------|
-| `CLOSE_WRITE` | File closed after writing | Normal file save in most editors |
-| `MOVED_TO` | File moved/renamed into place | Editors that use atomic saves (write to temp, then move) |
-| `DELETE` | File deleted | `rm` command, file removal |
-| `ATTRIB` | Metadata changed | `chmod`, `chown`, touch commands |
-| `CREATE` | New file created | Some editors, `touch`, file copies |
+| Change Type | Description | Detection |
+|-------------|-------------|------------|
+| **Permissions** | File mode changes | `chmod` operations |
+| **Ownership** | User/group changes | `chown` operations |
+| **Size** | File size modifications | Content additions/deletions |
+| **Timestamps** | Modification/change times | Any file modification |
+| **Content** | File content changes | MD5 hash comparison |
+| **Deletion** | File removal | File no longer exists |
+| **Creation** | New file appearance | File newly exists |
 
-All events are debounced to prevent multiple API calls from related operations (e.g., delete+create from editors).
+AIDE performs comprehensive integrity checks at configurable intervals, providing more thorough security monitoring than real-time file system events.
 
 ## AAP Integration
 
@@ -259,7 +265,8 @@ When a file change is detected, the service launches an AAP job template with th
         "file_path": "/path/to/watched/file.txt",
         "change_time": "2023-12-07 14:30:15",
         "event": "file_modified",
-        "hostname": "server-hostname"
+        "hostname": "server-hostname",
+        "change_details": "File: /path/to/watched/file.txt\n  Permissions: -rw-r--r-- -> -rwxr--r--\n  Size: 1024 -> 2048\n  Mtime: 2023-12-07 14:00:00 -> 2023-12-07 14:30:15"
     }
 }
 ```
@@ -269,6 +276,7 @@ These variables are available in your Ansible playbooks as:
 - `{{ change_time }}` - When the change was detected
 - `{{ event }}` - The type of change (always "file_modified")
 - `{{ hostname }}` - The hostname of the system running the monitor
+- `{{ change_details }}` - Detailed information about what changed (from AIDE)
 
 ## Security Features
 
@@ -296,14 +304,13 @@ The monitoring script includes several security and reliability improvements:
 - **Enhanced error handling**: Distinguishes between client/server errors
 - **Improved monitoring**: Uses FIFOs instead of subshells for better signal handling
 - **Connection timeouts**: Prevents hanging on network issues
-- **Event debouncing**: Prevents duplicate API calls from rapid file changes (configurable delay)
-- **Comprehensive event monitoring**: Tracks multiple file events:
-  - `close_write`: File saves completed
-  - `moved_to`: Atomic file replacements (common editor pattern)
-  - `delete`: File deletions
-  - `attrib`: Permission/ownership changes
-  - `create`: New file creation
-- **Editor compatibility**: Works with vi, vim, nano, VS Code, and other editors that recreate files
+- **AIDE database management**: Automatic initialization and updates
+- **Comprehensive integrity monitoring**: Tracks multiple file attributes:
+  - File permissions and ownership
+  - File size and timestamps
+  - File content (MD5 hash)
+  - File existence (creation/deletion)
+- **Security-focused design**: Detects unauthorized changes that might bypass real-time monitoring
 
 ## Troubleshooting
 
@@ -327,7 +334,12 @@ The monitoring script includes several security and reliability improvements:
    - Test manually: `curl -X POST -H "Authorization: Bearer $TOKEN" $API_URL`
    - Verify AAP URL format matches: `/api/controller/v2/job_templates/ID/launch/`
 
-4. **Permission issues:**
+4. **AIDE initialization issues:**
+   - Check AIDE is installed: `which aide`
+   - Verify AIDE can access the file: `aide --config=/etc/eda-filewatch/aide-<instance>.conf --check`
+   - Check AIDE database location has sufficient space
+
+5. **Permission issues:**
    - Service runs as root to ensure file access
    - Verify the watched file path is correct and accessible
 
@@ -346,28 +358,36 @@ Test the monitoring script manually:
 # Set environment variables
 export WATCH_FILE="/path/to/your/file.txt"
 export API_URL="https://your-api-endpoint.com/webhook"
+export CHECK_INTERVAL="30"
 export LOG_LEVEL="DEBUG"
 
 # Run the script as root
 sudo /opt/eda-filewatch/filewatch-monitor.sh
 ```
 
-### Manual Trigger
+### AIDE Testing
 
-You can manually trigger an API call using a specific configuration file:
+Test AIDE detection manually:
 
 ```bash
-# Trigger a single API call using a config file
-sudo /opt/eda-filewatch/filewatch-monitor.sh --trigger /etc/eda-filewatch/myfile.conf
+# Make a change to the monitored file
+sudo chmod 755 /path/to/your/file.txt
 
-# Show help
-/opt/eda-filewatch/filewatch-monitor.sh --help
+# Wait for the next check interval
+# Or manually run AIDE check
+sudo aide --config=/etc/eda-filewatch/aide-<instance>.conf --check
 ```
 
-This is useful for:
-- Testing your configuration before starting the service
-- Manually triggering AAP job templates
-- Debugging API connectivity issues
+### Performance Considerations
+
+AIDE-based monitoring has different performance characteristics than real-time monitoring:
+
+- **Check Interval**: Set `CHECK_INTERVAL` based on your security requirements
+  - Lower values (30-60s) for critical files requiring quick detection
+  - Higher values (300-600s) for less critical files to reduce system load
+- **AIDE Database Size**: Grows with the number and size of monitored files
+- **CPU Usage**: AIDE checks consume CPU during scans, but idle between checks
+- **Best Practice**: Monitor only critical files rather than entire directories
 
 ## Uninstallation
 
@@ -418,12 +438,17 @@ sudo systemctl daemon-reload
 
 /etc/eda-filewatch/
 ├── config.template               # Configuration template
-└── *.conf                       # Instance configurations
+├── *.conf                       # Instance configurations
+└── aide-*.conf                  # Auto-generated AIDE configs per instance
 
 /etc/systemd/system/
 └── eda-filewatch@.service       # Systemd service template
 
 /var/log/eda-filewatch/          # Log files for each instance (*.log)
+
+/var/lib/aide/                   # AIDE databases
+├── aide-<instance>.db.gz        # AIDE database per instance
+└── aide-<instance>.db.new.gz    # Temporary database during updates
 ```
 
 ## Contributing

@@ -53,8 +53,8 @@ check_requirements() {
     # Check for required packages
     local missing_packages=()
     
-    if ! command -v inotifywait >/dev/null 2>&1; then
-        missing_packages+=("inotify-tools")
+    if ! command -v aide >/dev/null 2>&1; then
+        missing_packages+=("aide")
     fi
     
     if ! command -v curl >/dev/null 2>&1; then
@@ -69,8 +69,8 @@ check_requirements() {
     if [[ ${#missing_packages[@]} -gt 0 ]]; then
         print_error "Missing required packages: ${missing_packages[*]}"
         echo "Please install them first:"
-        echo "  Ubuntu/Debian: sudo apt-get install ${missing_packages[*]}"
-        echo "  CentOS/RHEL/Fedora: sudo yum install ${missing_packages[*]}"
+        echo "  RHEL 8/9: sudo dnf install ${missing_packages[*]}"
+        echo "  RHEL 7: sudo yum install ${missing_packages[*]}"
         exit 1
     fi
     
@@ -177,6 +177,9 @@ API_METHOD="POST"
 # Optional: Timeout for API calls in seconds (default: 30)
 API_TIMEOUT=30
 
+# Optional: How often to check for changes in seconds (default: 60)
+CHECK_INTERVAL=60
+
 # Optional: Log level (DEBUG, INFO, WARN, ERROR) (default: INFO)
 LOG_LEVEL="INFO"
 EOF
@@ -193,6 +196,7 @@ show_usage() {
     print_status "Installation completed successfully!"
     echo
     print_warning "Note: The service runs as root to allow monitoring any file on the system"
+    print_warning "Note: AIDE must be initialized before first use - the service will handle this automatically"
     echo
     echo "Usage:"
     echo "  1. Create a configuration file for your instance:"

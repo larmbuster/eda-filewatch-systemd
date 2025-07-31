@@ -1,32 +1,18 @@
 #!/bin/bash
 
 # EDA File Watch Monitor for Ansible Automation Platform
-# Monitors a specified file for changes and triggers AAP job template launches
-# Can also be run manually to trigger a single API call
+# Uses AIDE to monitor file integrity and triggers AAP job template launches
+# Designed for RHEL 8/9 systems
 
 set -euo pipefail
 
 # Parse command line arguments
-MANUAL_MODE=false
 if [[ $# -gt 0 ]]; then
-    if [[ "$1" == "--trigger" ]] && [[ -n "${2:-}" ]]; then
-        MANUAL_MODE=true
-        CONFIG_FILE="$2"
-        if [[ ! -f "$CONFIG_FILE" ]]; then
-            echo "Error: Config file '$CONFIG_FILE' not found" >&2
-            exit 1
-        fi
-    elif [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
-        echo "Usage: $0 [--trigger CONFIG_FILE]"
+    if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
+        echo "Usage: $0"
         echo ""
-        echo "Normal mode (no arguments):"
-        echo "  Runs as a service, continuously monitoring the configured file"
-        echo ""
-        echo "Manual trigger mode:"
-        echo "  --trigger CONFIG_FILE   Load config and trigger a single API call"
-        echo ""
-        echo "Example:"
-        echo "  $0 --trigger /etc/eda-filewatch/myfile.conf"
+        echo "Runs as a service using AIDE to monitor file integrity"
+        echo "Configuration is loaded from /etc/eda-filewatch/<instance>.conf"
         exit 0
     else
         echo "Error: Invalid arguments. Use --help for usage information" >&2
@@ -41,7 +27,7 @@ API_METHOD="${API_METHOD:-POST}"
 API_TIMEOUT="${API_TIMEOUT:-30}"
 API_TOKEN="${API_TOKEN:-}"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
-CONFIG_FILE="${CONFIG_FILE:-/etc/eda-filewatch/config}"
+CONFIG_FILE="${CONFIG_FILE:-}"
 RETRY_COUNT="${RETRY_COUNT:-3}"
 RETRY_DELAY="${RETRY_DELAY:-5}"
 RATE_LIMIT="${RATE_LIMIT:-10}"  # Max API calls per minute
@@ -60,9 +46,12 @@ NC='\033[0m' # No Color
 # Rate limiting variables
 declare -a api_call_times=()
 
-# Debouncing variables
-last_event_time=0
-DEBOUNCE_DELAY="${DEBOUNCE_DELAY:-5}"  # Wait 5 seconds after last event before triggering
+# AIDE-specific variables
+CHECK_INTERVAL="${CHECK_INTERVAL:-60}"  # How often to run AIDE check (seconds)
+AIDE_CONFIG="${AIDE_CONFIG:-/etc/aide.conf}"
+# AIDE database paths will be set after config is loaded
+AIDE_DB="${AIDE_DB:-}"
+AIDE_DB_NEW="${AIDE_DB_NEW:-}"
 
 # Logging function
 log() {
@@ -91,7 +80,7 @@ log() {
 
 # Secure config loading with validation
 load_config() {
-    if [[ -f "$CONFIG_FILE" ]]; then
+    if [[ -n "$CONFIG_FILE" ]] && [[ -f "$CONFIG_FILE" ]]; then
         # Check file permissions
         local perms=$(stat -c "%a" "$CONFIG_FILE" 2>/dev/null || echo "000")
         if [[ $perms -gt 644 ]]; then
@@ -116,6 +105,20 @@ load_config() {
 
 # Enhanced configuration validation
 validate_config() {
+    # Validate CONFIG_FILE is set
+    if [[ -z "$CONFIG_FILE" ]]; then
+        log "ERROR" "CONFIG_FILE is not set. This should be set by systemd."
+        exit 1
+    fi
+    
+    # Set instance-specific AIDE database paths after config is loaded
+    local instance_name="${CONFIG_FILE##*/}"
+    instance_name="${instance_name%.conf}"
+    # Fallback to default if empty
+    instance_name="${instance_name:-default}"
+    export AIDE_DB="${AIDE_DB:-/var/lib/aide/aide-${instance_name}.db.gz}"
+    export AIDE_DB_NEW="${AIDE_DB_NEW:-/var/lib/aide/aide-${instance_name}.db.new.gz}"
+    
     if [[ -z "$WATCH_FILE" ]]; then
         log "ERROR" "WATCH_FILE is not set. Please set it in environment or config file."
         exit 1
@@ -157,19 +160,29 @@ validate_config() {
         exit 1
     fi
     
-    # Validate DEBOUNCE_DELAY
-    if ! [[ "$DEBOUNCE_DELAY" =~ ^[0-9]+$ ]]; then
-        log "ERROR" "DEBOUNCE_DELAY must be a positive integer, got: $DEBOUNCE_DELAY"
+    # Validate CHECK_INTERVAL
+    if ! [[ "$CHECK_INTERVAL" =~ ^[0-9]+$ ]]; then
+        log "ERROR" "CHECK_INTERVAL must be a positive integer, got: $CHECK_INTERVAL"
         exit 1
     fi
     
-    if [[ ! -f "$WATCH_FILE" ]]; then
+    if [[ "$CHECK_INTERVAL" -lt 30 ]]; then
+        log "WARN" "CHECK_INTERVAL is less than 30 seconds. This may cause high system load."
+    fi
+    
+    if [[ ! -e "$WATCH_FILE" ]]; then
         log "ERROR" "Watch file '$WATCH_FILE' does not exist."
         exit 1
     fi
     
-    if ! command -v inotifywait >/dev/null 2>&1; then
-        log "ERROR" "inotifywait is not installed. Please install inotify-tools package."
+    if [[ ! -f "$WATCH_FILE" ]]; then
+        log "ERROR" "Watch file '$WATCH_FILE' is not a regular file."
+        exit 1
+    fi
+    
+    if ! command -v aide >/dev/null 2>&1; then
+        log "ERROR" "AIDE is not installed. Please install aide package."
+        log "ERROR" "RHEL/CentOS: sudo yum install aide"
         exit 1
     fi
     
@@ -181,6 +194,12 @@ validate_config() {
     # Test file readability
     if ! [[ -r "$WATCH_FILE" ]]; then
         log "ERROR" "Cannot read watch file '$WATCH_FILE'. Check permissions."
+        exit 1
+    fi
+    
+    # Validate file path doesn't contain newlines (would break AIDE config)
+    if [[ "$WATCH_FILE" =~ $'\n' ]]; then
+        log "ERROR" "Watch file path cannot contain newlines"
         exit 1
     fi
     
@@ -255,6 +274,7 @@ check_rate_limit() {
 make_api_call() {
     local file_path="$1"
     local change_time="$2"
+    local change_details="$3"
     local attempt=1
     
     # Apply rate limiting
@@ -266,6 +286,7 @@ make_api_call() {
     local escaped_file_path=$(json_escape "$file_path")
     local escaped_change_time=$(json_escape "$change_time")
     local escaped_hostname=$(json_escape "$(hostname)")
+    local escaped_change_details=$(json_escape "$change_details")
     
     # AAP expects extra_vars format
     local payload=$(cat <<EOF
@@ -274,7 +295,8 @@ make_api_call() {
         "file_path": "$escaped_file_path",
         "change_time": "$escaped_change_time",
         "event": "file_modified",
-        "hostname": "$escaped_hostname"
+        "hostname": "$escaped_hostname",
+        "change_details": "$escaped_change_details"
     }
 }
 EOF
@@ -299,7 +321,7 @@ EOF
             -w "\n%{http_code}"
             -X "$API_METHOD"
             -H "Content-Type: application/json"
-            -H "User-Agent: EDA-FileWatch-Monitor/1.0"
+            -H "User-Agent: EDA-AIDE-FileWatch/1.0"
             --connect-timeout 10
             --max-time "$API_TIMEOUT"
         )
@@ -369,29 +391,170 @@ EOF
     return 1
 }
 
+# Initialize AIDE for our specific file
+init_aide() {
+    log "INFO" "Initializing AIDE monitoring for $WATCH_FILE"
+    
+    # Create a custom AIDE config for our specific file
+    local instance_name="${CONFIG_FILE##*/}"
+    instance_name="${instance_name%.conf}"
+    instance_name="${instance_name:-default}"
+    local custom_aide_config="/etc/eda-filewatch/aide-${instance_name}.conf"
+    local aide_db_dir=$(dirname "$AIDE_DB")
+    
+    # Ensure directories exist
+    if ! mkdir -p "$(dirname "$custom_aide_config")" 2>/dev/null; then
+        log "ERROR" "Failed to create config directory: $(dirname "$custom_aide_config")"
+        exit 1
+    fi
+    
+    if ! mkdir -p "$aide_db_dir" 2>/dev/null; then
+        log "ERROR" "Failed to create AIDE database directory: $aide_db_dir"
+        exit 1
+    fi
+    
+    # Create minimal AIDE config for our file
+    if ! cat > "$custom_aide_config" << EOF
+# AIDE config for EDA File Watch Monitor
+# Monitoring: $WATCH_FILE
+
+# Database locations
+database=file://${AIDE_DB}
+database_out=file://${AIDE_DB_NEW}
+
+# Log settings
+verbose=5
+report_url=stdout
+
+# Define what to check
+# p: permissions, u: user, g: group, s: size, m: mtime, c: ctime, md5: MD5 hash
+NORMAL = p+u+g+s+m+c+md5
+
+# Monitor our specific file
+$WATCH_FILE NORMAL
+
+# Exclude everything else
+!/.*
+EOF
+    then
+        log "ERROR" "Failed to create AIDE config file: $custom_aide_config"
+        exit 1
+    fi
+    
+    # Update our AIDE_CONFIG to use the custom config
+    export AIDE_CONFIG="$custom_aide_config"
+    
+    # Initialize AIDE database if it doesn't exist
+    if [[ ! -f "$AIDE_DB" ]]; then
+        log "INFO" "Creating initial AIDE database..."
+        if aide --config="$AIDE_CONFIG" --init 2>&1 | grep -v "^$" >/dev/null; then
+            # Move new database to active location
+            mv "$AIDE_DB_NEW" "$AIDE_DB"
+            log "INFO" "AIDE database initialized successfully"
+        else
+            log "ERROR" "Failed to initialize AIDE database"
+            exit 1
+        fi
+    else
+        log "INFO" "AIDE database already exists"
+    fi
+}
+
+# Check for file changes using AIDE
+check_aide_changes() {
+    log "DEBUG" "Running AIDE check..."
+    
+    # Run AIDE check and capture output
+    local aide_output
+    local aide_exit_code
+    
+    # Run AIDE with our custom config
+    aide_output=$(aide --config="$AIDE_CONFIG" --check 2>&1)
+    aide_exit_code=$?
+    
+    # AIDE exit codes:
+    # 0 = No changes
+    # 1 = New files added
+    # 2 = Files removed  
+    # 4 = Files changed
+    # Combinations possible (e.g., 3 = new + removed, 7 = all changes)
+    # Higher codes indicate errors
+    
+    if [[ $aide_exit_code -eq 0 ]]; then
+        log "DEBUG" "No changes detected"
+        return 0
+    elif [[ $aide_exit_code -ge 1 && $aide_exit_code -le 7 ]]; then
+        log "INFO" "Changes detected in $WATCH_FILE (exit code: $aide_exit_code)"
+        # Don't log full AIDE output for security - it may contain sensitive data
+        log "DEBUG" "AIDE check completed with changes"
+        
+        # Extract change details
+        local change_details=""
+        if echo "$aide_output" | grep -q "$WATCH_FILE"; then
+            change_details=$(echo "$aide_output" | grep -A5 "$WATCH_FILE" | head -6)
+        fi
+        
+        # Get current time
+        local change_time=$(date '+%Y-%m-%d %H:%M:%S')
+        
+        # Make API call
+        if make_api_call "$WATCH_FILE" "$change_time" "$change_details"; then
+            log "INFO" "Successfully processed file change event"
+            
+            # Update AIDE database with locking
+            log "INFO" "Updating AIDE database..."
+            local instance_name="${CONFIG_FILE##*/}"
+            instance_name="${instance_name%.conf}"
+            instance_name="${instance_name:-default}"
+            local lock_file="/tmp/aide-${instance_name}.lock"
+            (
+                flock -x -w 30 200 || {
+                    log "ERROR" "Failed to acquire AIDE database lock"
+                    return 1
+                }
+                if aide --config="$AIDE_CONFIG" --update 2>&1 | grep -v "^$" >/dev/null; then
+                    # Move new database to active location
+                    mv -f "$AIDE_DB_NEW" "$AIDE_DB"
+                    log "INFO" "AIDE database updated"
+                else
+                    log "ERROR" "Failed to update AIDE database"
+                fi
+            ) 200>"$lock_file"
+        else
+            log "WARN" "Failed to process file change event, but continuing to monitor"
+        fi
+        
+        return 1
+    else
+        log "ERROR" "AIDE check failed with exit code $aide_exit_code"
+        # Log only first line of error for security
+        local error_summary=$(echo "$aide_output" | head -n1)
+        log "ERROR" "AIDE error: $error_summary"
+        return 2
+    fi
+}
+
 # Enhanced signal handling
 cleanup() {
-    log "INFO" "Shutting down file monitor..."
-    # Kill any child processes (including debounce timers)
-    pkill -P $$ 2>/dev/null || true
-    # Clean up any temporary files
-    rm -f /tmp/inotify_fifo_$$ 2>/dev/null || true
+    log "INFO" "Shutting down AIDE file monitor..."
+    # Note: We don't kill AIDE processes as they should complete naturally
+    # Killing AIDE mid-operation could corrupt the database
     exit 0
 }
 
 # Set up signal handlers
 trap cleanup SIGTERM SIGINT SIGHUP
 
-# Main monitoring loop with improved error handling
+# Main monitoring loop
 main() {
-    log "INFO" "Starting EDA File Watch Monitor for Ansible Automation Platform"
+    log "INFO" "Starting AIDE-based File Watch Monitor for Ansible Automation Platform"
     log "INFO" "Watching file: $WATCH_FILE"
     log "INFO" "AAP Job Template URL: $API_URL"
+    log "INFO" "Check interval: ${CHECK_INTERVAL}s"
     log "INFO" "HTTP Method: $API_METHOD"
     log "INFO" "Request Timeout: ${API_TIMEOUT}s"
     log "INFO" "Retry Count: $RETRY_COUNT"
     log "INFO" "Rate Limit: $RATE_LIMIT calls/minute"
-    log "INFO" "Debounce Delay: ${DEBOUNCE_DELAY}s"
     
     if [[ -z "$API_TOKEN" ]]; then
         log "ERROR" "AAP Authentication token not configured - this is required!"
@@ -399,132 +562,23 @@ main() {
     fi
     log "INFO" "AAP Authentication: Token configured"
     
+    # Initialize AIDE
+    init_aide
+    
     # Start monitoring
-    log "INFO" "Starting file monitor..."
-    log "INFO" "Note: Monitoring directory to catch file recreations by editors"
+    log "INFO" "Starting AIDE monitoring loop..."
     
     while true; do
-        # Use a more robust approach to handle the pipe
-        local temp_fifo="/tmp/inotify_fifo_$$"
-        if [[ -p "$temp_fifo" ]]; then
-            rm -f "$temp_fifo"
-        fi
-        mkfifo "$temp_fifo"
+        # Check for changes
+        check_aide_changes
         
-        # Get directory and filename
-        local watch_dir=$(dirname "$WATCH_FILE")
-        local watch_filename=$(basename "$WATCH_FILE")
-        
-        # Start inotifywait in monitor mode in background
-        # Monitor the directory to catch file recreations
-        # Events monitored:
-        #   close_write: File closed after writing (save complete)
-        #   moved_to: File moved into directory (atomic saves)
-        #   delete: File deleted
-        #   attrib: File permissions/metadata changed
-        #   create: File created (catches some editor patterns)
-        inotifywait -m -e close_write,moved_to,delete,attrib,create "$watch_dir" \
-            --format '%w%f %e %T' --timefmt '%Y-%m-%d %H:%M:%S' \
-            2>/dev/null > "$temp_fifo" &
-        
-        local inotify_pid=$!
-        
-        # Read from fifo with timeout check
-        # Variables for debouncing
-        local pending_file=""
-        local pending_time=""
-        local pending_event=""
-        local debounce_timer_pid=""
-        
-        while true; do
-            # Check if inotifywait is still running
-            if ! kill -0 $inotify_pid 2>/dev/null; then
-                log "WARN" "inotifywait process died"
-                break
-            fi
-            
-            # Read with timeout
-            if read -r file event time < "$temp_fifo"; then
-                # Only process events for our specific file
-                if [[ "$file" == "$WATCH_FILE" ]]; then
-                    log "DEBUG" "File event detected: $file ($event) at $time"
-                    
-                    # Kill any existing debounce timer
-                    if [[ -n "$debounce_timer_pid" ]] && kill -0 "$debounce_timer_pid" 2>/dev/null; then
-                        kill "$debounce_timer_pid" 2>/dev/null || true
-                        log "DEBUG" "Cancelled previous debounce timer"
-                    fi
-                    
-                    # Store the latest event details
-                    pending_file="$file"
-                    pending_time="$time"
-                    pending_event="$event"
-                    
-                    # Start a new debounce timer in background
-                    (
-                        sleep "$DEBOUNCE_DELAY"
-                        log "INFO" "Processing file event: $pending_file ($pending_event at $pending_time)"
-                        
-                        # Make API call
-                        if make_api_call "$pending_file" "$pending_time"; then
-                            log "INFO" "Successfully processed file change event"
-                        else
-                            log "WARN" "Failed to process file change event, but continuing to monitor"
-                        fi
-                    ) &
-                    debounce_timer_pid=$!
-                fi
-                
-            else
-                # Read failed, check if process is still alive
-                if ! kill -0 $inotify_pid 2>/dev/null; then
-                    break
-                fi
-            fi
-        done
-        
-        # Clean up
-        kill $inotify_pid 2>/dev/null || true
-        if [[ -n "$debounce_timer_pid" ]] && kill -0 "$debounce_timer_pid" 2>/dev/null; then
-            kill "$debounce_timer_pid" 2>/dev/null || true
-        fi
-        rm -f "$temp_fifo"
-        
-        # If we get here, inotifywait exited
-        log "WARN" "inotifywait exited, restarting in 5 seconds..."
-        sleep 5
+        # Sleep before next check
+        log "DEBUG" "Sleeping for ${CHECK_INTERVAL}s before next check..."
+        sleep "$CHECK_INTERVAL"
     done
-}
-
-# Manual trigger mode - make a single API call
-manual_trigger() {
-    log "INFO" "Manual trigger mode - Loading configuration"
-    log "INFO" "Config file: $CONFIG_FILE"
-    
-    # Show current configuration
-    log "INFO" "Configuration:"
-    log "INFO" "  Watch file: $WATCH_FILE"
-    log "INFO" "  API URL: $API_URL"
-    
-    # Make a single API call
-    log "INFO" "Triggering API call..."
-    local current_time=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    if make_api_call "$WATCH_FILE" "$current_time"; then
-        log "INFO" "Manual trigger completed successfully"
-        exit 0
-    else
-        log "ERROR" "Manual trigger failed"
-        exit 1
-    fi
 }
 
 # Start the program
 load_config
 validate_config
-
-if [[ "$MANUAL_MODE" == "true" ]]; then
-    manual_trigger
-else
-    main
-fi 
+main 

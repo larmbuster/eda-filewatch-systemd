@@ -1,12 +1,39 @@
 ---
-- name: Enforce foo.txt
+- name: Respond to AIDE-detected file changes
   hosts: all
   become: true
+  vars:
+    file_path: "{{ file_path | default('unknown') }}"
+    change_time: "{{ change_time | default('unknown') }}"
+    event: "{{ event | default('file_modified') }}"
+    hostname: "{{ hostname | default('unknown') }}"
+    change_details: "{{ change_details | default('') }}"
   tasks:
-    - name: Ensure foo.txt contains only "foo"
-      ansible.builtin.lineinfile:
-        path: /home/larmbuster/git-repos/eda-filewatch-systemd/foo.txt
-        regexp: '^FOO='
-        line: FOO=foo
-        create: true
-        mode: '0744'
+    - name: Log the file change event
+      ansible.builtin.debug:
+        msg: |
+          File change detected by AIDE:
+          - File: {{ file_path }}
+          - Time: {{ change_time }}
+          - Event: {{ event }}
+          - Host: {{ hostname }}
+          - Details: {{ change_details }}
+    
+    - name: Example response - Create alert file
+      ansible.builtin.copy:
+        content: |
+          AIDE Alert: File {{ file_path }} was modified
+          Time: {{ change_time }}
+          Host: {{ hostname }}
+          Details:
+          {{ change_details }}
+        dest: "/tmp/aide-alert-{{ ansible_date_time.epoch }}.txt"
+        mode: '0644'
+    
+    # Add your custom response tasks here
+    # Examples:
+    # - Send email notification
+    # - Update CMDB
+    # - Trigger security scan
+    # - Restore file from backup
+    # - Update compliance records
